@@ -23,9 +23,9 @@ ENV PYTHONUNBUFFERED=1
 RUN apk add --update --no-cache python2 && ln -sf python2 /usr/bin/python
 RUN python2.7 -m ensurepip
 RUN pip2 install --no-cache --upgrade pip setuptools
-RUN npm install -g node-gyp
+RUN npm install -g node-gyp --silent
 
 COPY ./ ./
-RUN npm install
+RUN npm install --silent
 
 CMD [ "node","index.js" ]
