@@ -1,8 +1,9 @@
 // This file handles connection to the database and initializing tables if they don't already exists
-const SQL = require('sequelize');
-const mysql = require('mysql2/promise');
-const bcrypt = require('bcryptjs');
-const config = require('./config');
+const SQL = require("sequelize");
+const mysql = require("mysql2/promise");
+const { Client } = require("pg");
+const bcrypt = require("bcryptjs");
+const config = require("./config");
 
 const {
   host,
@@ -19,40 +20,81 @@ const {
 } = config;
 
 module.exports.createDB = async () => {
-  const connection = await mysql.createConnection({
-    host,
-    port,
-    user,
-    password,
+  // const connection = await mysql.createConnection({
+  //   host,
+  //   port,
+  //   user,
+  //   password,
+  // });
+  // await connection.query(
+  //   `CREATE DATABASE IF NOT EXISTS \`${testDatabase}\`;`,
+  // );
+  // return await connection.query(
+  //   `CREATE DATABASE IF NOT EXISTS \`${database}\`;`,
+  // ); // create db if it doesn't exists
+  const connection = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false,
+    },
   });
-  await connection.query(
-    `CREATE DATABASE IF NOT EXISTS \`${testDatabase}\`;`,
-  );
-  return await connection.query(
-    `CREATE DATABASE IF NOT EXISTS \`${database}\`;`,
-  ); // create db if it doesn't exists
+  try {
+    await connection.connect();
+    await connection.end();
+  } catch (err) {
+    console.error(err);
+    return false;
+  }
+  return true;
 };
 
 module.exports.createStore = async (useTestDB) => {
-  const dbToUse = useTestDB ? testDatabase : database;
-  const db = new SQL(dbToUse, user, password, {
-    host,
-    dialect: 'mysql' /* one of 'mysql' | 'mariadb' | 'postgres' | 'mssql' */,
-    port,
-    // eslint-disable-next-line no-console
-    define: {
-      charset: 'utf8mb4',
-      collate: 'utf8mb4_unicode_ci',
-    },
-    // eslint-disable-next-line no-console
-    logging: () => undefined,
-    dbToUse,
-  });
+  const dbTarget = useTestDB ? testDatabase : database;
+  let db;
+  // const db = new SQL(dbToUse, user, password, {
+  //   host,
+  //   dialect: 'mysql' /* one of 'mysql' | 'mariadb' | 'postgres' | 'mssql' */,
+  //   port,
+  //   // eslint-disable-next-line no-console
+  //   define: {
+  //     charset: 'utf8mb4',
+  //     collate: 'utf8mb4_unicode_ci',
+  //   },
+  //   // eslint-disable-next-line no-console
+  //   logging: () => undefined,
+  //   dbToUse,
+  // });
+  try {
+    db = new SQL({
+      database: dbTarget,
+      username: user,
+      password,
+      host,
+      port,
+      define: {
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
+      },
+      dialect: "postgres",
+      dialectOptions: {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false,
+        },
+      },
+      logging: () => undefined,
+    });
+    await db.authenticate();
+    console.log("connected to postgres db");
+  } catch (error) {
+    console.error("error initializing db", error);
+    return;
+  }
 
-  db.query('SET NAMES utf8mb4;');
+  db.query("SET NAMES utf8mb4;");
 
   const users = db.define(
-    'users',
+    "users",
     {
       id: {
         type: SQL.INTEGER,
@@ -106,14 +148,14 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   const models = db.define(
-    'models',
+    "models",
     {
       id: {
         type: SQL.INTEGER,
@@ -160,14 +202,14 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   const modelCategories = db.define(
-    'modelCategories',
+    "modelCategories",
     {
       id: {
         type: SQL.INTEGER,
@@ -183,14 +225,14 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   const modelCategoryRelationships = db.define(
-    'modelCategoryRelationships',
+    "modelCategoryRelationships",
     {
       modelId: {
         type: SQL.INTEGER,
@@ -212,35 +254,35 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   models.belongsToMany(modelCategories, {
-    as: 'categories',
+    as: "categories",
     through: {
-      model: 'modelCategoryRelationships',
+      model: "modelCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'id',
-    foreignKey: 'modelId',
+    sourceKey: "id",
+    foreignKey: "modelId",
     constraints: false,
   });
   modelCategories.belongsToMany(models, {
-    as: 'models',
+    as: "models",
     through: {
-      model: 'modelCategoryRelationships',
+      model: "modelCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'id',
-    foreignKey: 'modelCategoryId',
+    sourceKey: "id",
+    foreignKey: "modelCategoryId",
     constraints: false,
   });
 
   const calibratorCategoryRelationships = db.define(
-    'calibratorCategoryRelationships',
+    "calibratorCategoryRelationships",
     {
       modelId: {
         type: SQL.INTEGER,
@@ -262,45 +304,45 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   models.belongsToMany(modelCategories, {
-    as: 'calibratorCategories',
+    as: "calibratorCategories",
     through: {
-      model: 'calibratorCategoryRelationships',
+      model: "calibratorCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'id',
-    foreignKey: 'modelId',
+    sourceKey: "id",
+    foreignKey: "modelId",
     constraints: false,
   });
   modelCategories.belongsToMany(models, {
-    as: 'calibratorModels',
+    as: "calibratorModels",
     through: {
-      model: 'calibratorCategoryRelationships',
+      model: "calibratorCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'id',
-    foreignKey: 'modelCategoryId',
+    sourceKey: "id",
+    foreignKey: "modelCategoryId",
     constraints: false,
   });
 
   const instruments = db.define(
-    'instruments',
+    "instruments",
     {
       modelReference: {
         type: SQL.INTEGER,
         allowNull: false,
         references: {
-          model: 'models',
-          key: 'id',
+          model: "models",
+          key: "id",
         },
-        onUpdate: 'RESTRICT',
-        onDelete: 'RESTRICT',
+        onUpdate: "RESTRICT",
+        onDelete: "RESTRICT",
       },
       vendor: {
         type: SQL.STRING(30),
@@ -341,14 +383,14 @@ module.exports.createStore = async (useTestDB) => {
     },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   const instrumentCategories = db.define(
-    'instrumentCategories',
+    "instrumentCategories",
     {
       id: {
         type: SQL.INTEGER,
@@ -364,14 +406,14 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   const instrumentCategoryRelationships = db.define(
-    'instrumentCategoryRelationships',
+    "instrumentCategoryRelationships",
     {
       id: {
         type: SQL.INTEGER,
@@ -382,126 +424,126 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   instruments.belongsToMany(instrumentCategories, {
-    as: 'instrumentCategories',
+    as: "instrumentCategories",
     through: {
-      model: 'instrumentCategoryRelationships',
+      model: "instrumentCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'id',
-    targetKey: 'id',
+    sourceKey: "id",
+    targetKey: "id",
   });
 
   instrumentCategories.belongsToMany(instruments, {
-    as: 'instruments',
+    as: "instruments",
     through: {
-      model: 'instrumentCategoryRelationships',
+      model: "instrumentCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'id',
-    targetKey: 'id',
+    sourceKey: "id",
+    targetKey: "id",
   });
 
   models.hasMany(modelCategoryRelationships, {
-    as: 'mtmcr',
-    foreignKey: 'modelId', // B.a_id
-    sourceKey: 'id', // the A.id
+    as: "mtmcr",
+    foreignKey: "modelId", // B.a_id
+    sourceKey: "id", // the A.id
     constraints: false,
   });
 
   modelCategoryRelationships.belongsTo(models, {
-    as: 'mcrtm',
-    foreignKey: 'modelId', // B.a_id
-    targetKey: 'id', // the A.id
+    as: "mcrtm",
+    foreignKey: "modelId", // B.a_id
+    targetKey: "id", // the A.id
     constraints: false,
   });
 
   modelCategories.hasMany(modelCategoryRelationships, {
-    as: 'mctmcr',
-    foreignKey: 'modelCategoryId', // B.a_id
-    sourceKey: 'id', // the A.id
+    as: "mctmcr",
+    foreignKey: "modelCategoryId", // B.a_id
+    sourceKey: "id", // the A.id
     constraints: false,
   });
 
   modelCategoryRelationships.belongsTo(modelCategories, {
-    as: 'mcrtmc',
-    foreignKey: 'modelCategoryId', // B.a_id
-    targetKey: 'id', // the A.id
+    as: "mcrtmc",
+    foreignKey: "modelCategoryId", // B.a_id
+    targetKey: "id", // the A.id
     constraints: false,
   });
 
   instruments.hasMany(instrumentCategoryRelationships, {
-    as: 'iticr',
-    foreignKey: 'instrumentId', // B.a_id
-    sourceKey: 'id', // the A.id
+    as: "iticr",
+    foreignKey: "instrumentId", // B.a_id
+    sourceKey: "id", // the A.id
     constraints: false,
   });
 
   instrumentCategoryRelationships.belongsTo(instruments, {
-    as: 'icrti',
-    foreignKey: 'instrumentId', // B.a_id
-    targetKey: 'id', // the A.id
+    as: "icrti",
+    foreignKey: "instrumentId", // B.a_id
+    targetKey: "id", // the A.id
     constraints: false,
   });
 
   instrumentCategories.hasMany(instrumentCategoryRelationships, {
-    as: 'icticr',
-    foreignKey: 'instrumentCategoryId', // B.a_id
-    sourceKey: 'id', // the A.id
+    as: "icticr",
+    foreignKey: "instrumentCategoryId", // B.a_id
+    sourceKey: "id", // the A.id
     constraints: false,
   });
 
   instrumentCategoryRelationships.belongsTo(instrumentCategories, {
-    as: 'icrtic',
-    foreignKey: 'instrumentCategoryId', // B.a_id
-    targetKey: 'id', // the A.id
+    as: "icrtic",
+    foreignKey: "instrumentCategoryId", // B.a_id
+    targetKey: "id", // the A.id
     constraints: false,
   });
 
   instruments.hasMany(modelCategoryRelationships, {
-    as: 'itmcr',
-    foreignKey: 'modelId', // B.a_id
-    sourceKey: 'modelReference', // the A.id
+    as: "itmcr",
+    foreignKey: "modelId", // B.a_id
+    sourceKey: "modelReference", // the A.id
     constraints: false,
   });
 
   modelCategoryRelationships.belongsTo(instruments, {
-    as: 'mcrti',
-    foreignKey: 'modelId', // B.a_id
-    targetKey: 'modelReference', // the A.id
+    as: "mcrti",
+    foreignKey: "modelId", // B.a_id
+    targetKey: "modelReference", // the A.id
     constraints: false,
   });
 
   instruments.belongsToMany(modelCategories, {
-    as: 'modelCategories',
+    as: "modelCategories",
     through: {
-      model: 'modelCategoryRelationships',
+      model: "modelCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'modelReference',
-    foreignKey: 'modelId',
+    sourceKey: "modelReference",
+    foreignKey: "modelId",
     constraints: false,
   });
 
   modelCategories.belongsToMany(instruments, {
-    as: 'instrumentsOfModels',
+    as: "instrumentsOfModels",
     through: {
-      model: 'modelCategoryRelationships',
+      model: "modelCategoryRelationships",
       unique: false,
     },
-    sourceKey: 'id',
-    foreignKey: 'modelCategoryId',
+    sourceKey: "id",
+    foreignKey: "modelCategoryId",
     constraints: false,
   });
 
   const calibrationEvents = db.define(
-    'calibrationEvents',
+    "calibrationEvents",
     {
       id: {
         type: SQL.INTEGER,
@@ -512,11 +554,11 @@ module.exports.createStore = async (useTestDB) => {
         type: SQL.INTEGER,
         allowNull: false,
         references: {
-          model: 'instruments',
-          key: 'id',
+          model: "instruments",
+          key: "id",
         },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
+        onUpdate: "CASCADE",
+        onDelete: "CASCADE",
       },
       user: {
         type: SQL.STRING,
@@ -558,14 +600,14 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   const calibratedByRelationships = db.define(
-    'calibratedByRelationships',
+    "calibratedByRelationships",
     {
       id: {
         type: SQL.INTEGER,
@@ -576,21 +618,21 @@ module.exports.createStore = async (useTestDB) => {
         type: SQL.INTEGER,
         allowNull: false,
         references: {
-          model: 'calibrationEvents',
-          key: 'id',
+          model: "calibrationEvents",
+          key: "id",
         },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
+        onUpdate: "CASCADE",
+        onDelete: "CASCADE",
       },
       calibratedInstrument: {
         type: SQL.INTEGER,
         allowNull: false,
         references: {
-          model: 'instruments',
-          key: 'id',
+          model: "instruments",
+          key: "id",
         },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
+        onUpdate: "CASCADE",
+        onDelete: "CASCADE",
       },
       calibratedBy: {
         type: SQL.INTEGER,
@@ -616,27 +658,29 @@ module.exports.createStore = async (useTestDB) => {
     { freezeTableName: true },
     {
       define: {
-        charset: 'utf8mb4',
-        collate: 'utf8mb4_unicode_ci',
+        charset: "utf8mb4",
+        collate: "utf8mb4_unicode_ci",
       },
-    },
+    }
   );
 
   calibrationEvents.hasMany(calibratedByRelationships, {
-    as: 'calibratedBy',
-    sourceKey: 'id',
-    foreignKey: 'calibration',
+    as: "calibratedBy",
+    sourceKey: "id",
+    foreignKey: "calibration",
     constraints: false,
   });
 
   instruments.hasMany(calibrationEvents, {
-    as: 'recentCalibration',
-    sourceKey: 'id',
-    foreignKey: 'calibrationHistoryIdReference',
+    as: "recentCalibration",
+    sourceKey: "id",
+    foreignKey: "calibrationHistoryIdReference",
     constraints: false,
   });
   db.sync();
-  const adminExist = await users.findAll({ where: { userName: adminUsername } });
+  const adminExist = await users.findAll({
+    where: { userName: adminUsername },
+  });
 
   if (adminExist[0] == null) {
     const salt = bcrypt.genSaltSync(10);

@@ -17,34 +17,66 @@ const BulkDataAPI = require('./datasources/bulkData');
 require('./express'); // use express server too
 
 // Connect to db and init tables
-let store;
-createDB().then(async () => {
-  store = await createStore(false);
-  const checkVoltmeter = await store.modelCategories.findOne({
-    where: { name: 'voltmeter' },
-  });
-  if (checkVoltmeter === null) {
-    await store.modelCategories.create({
-      name: 'voltmeter',
-    });
+let store = null;
+function createSchema () {
+  while (store === null) {
+    console.log("in while loop");
+    // Connect to db and init tables
+    await createDB()
+      .then(async () => {
+        store = await createStore(false);
+        const categories_on_start = [
+          "voltmeter",
+          "current_shunt_meter",
+          "Klufe_K5700-compatible",
+          "precision_multimeter",
+        ];
+        for (var category of categories_on_start) {
+          if (
+            (await store.modelCategories.findOne({
+              where: { name: category },
+            })) === null
+          ) {
+            await store.modelCategories.create({
+              name: category,
+            });
+          }
+        }
+      })
+      .catch(async (e) => {
+        console.log("something broke!");
+        console.error(e);
+      });
   }
-  const checkShuntmeter = await store.modelCategories.findOne({
-    where: { name: 'current_shunt_meter' },
-  });
-  if (checkShuntmeter === null) {
-    await store.modelCategories.create({
-      name: 'current_shunt_meter',
-    });
-  }
-  const checkKlufe = await store.modelCategories.findOne({
-    where: { name: 'Klufe_K5700-compatible' },
-  });
-  if (checkKlufe === null) {
-    await store.modelCategories.create({
-      name: 'Klufe_K5700-compatible',
-    });
-  }
-});
+}
+createSchema();
+// createDB().then(async () => {
+//   store = await createStore(false);
+//   const checkVoltmeter = await store.modelCategories.findOne({
+//     where: { name: 'voltmeter' },
+//   });
+//   if (checkVoltmeter === null) {
+//     await store.modelCategories.create({
+//       name: 'voltmeter',
+//     });
+//   }
+//   const checkShuntmeter = await store.modelCategories.findOne({
+//     where: { name: 'current_shunt_meter' },
+//   });
+//   if (checkShuntmeter === null) {
+//     await store.modelCategories.create({
+//       name: 'current_shunt_meter',
+//     });
+//   }
+//   const checkKlufe = await store.modelCategories.findOne({
+//     where: { name: 'Klufe_K5700-compatible' },
+//   });
+//   if (checkKlufe === null) {
+//     await store.modelCategories.create({
+//       name: 'Klufe_K5700-compatible',
+//     });
+//   }
+// });
 
 // Define api
 const dataSources = () => ({
