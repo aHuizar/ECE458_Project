@@ -1,22 +1,23 @@
 // This file deals with what methods a user model should have
-const { DataSource } = require('apollo-datasource');
-const bcrypt = require('bcryptjs');
-const { createSigner } = require('fast-jwt');
+const { DataSource } = require("apollo-datasource");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const config = require("./../config");
 
-function validateUser({
-  firstName, lastName, password, email,
-}) {
+const { jwtSecret, jwtExp } = config;
+
+function validateUser({ firstName, lastName, password, email }) {
   if (firstName.length > 128) {
-    return [false, 'First name must be under 128 characters!'];
+    return [false, "First name must be under 128 characters!"];
   }
   if (lastName.length > 128) {
-    return [false, 'Last name must be under 128 characters!'];
+    return [false, "Last name must be under 128 characters!"];
   }
   if (password.length > 256) {
-    return [false, 'Password must be under 128 characters!'];
+    return [false, "Password must be under 128 characters!"];
   }
   if (email.length > 320) {
-    return [false, 'Email must be under 128 characters!'];
+    return [false, "Email must be under 128 characters!"];
   }
   return [true];
 }
@@ -39,7 +40,7 @@ class UserAPI extends DataSource {
 
   checkPermissions() {
     const { user } = this.context;
-    if (process.env.NODE_ENV.includes('dev')) {
+    if (process.env.NODE_ENV.includes("dev")) {
       return true;
     }
     return user.isAdmin;
@@ -50,24 +51,20 @@ class UserAPI extends DataSource {
    * to a user in the db
    */
   async login({ userName, password }) {
-    const response = { success: false, message: '', jwt: '' };
+    const response = { success: false, message: "", jwt: "", user: null };
     await this.findUser({ userName }).then((value) => {
       if (!value) {
-        response.message = 'Wrong username/password';
+        response.message = "Wrong username/password";
       } else {
-        // 1 day = 8.64e7 ms
-        const signSync = createSigner({
-          key: 'secret',
-          expiresIn: 8.64e7,
-          sub: value.id.toString(),
-        });
         response.success = bcrypt.compareSync(password, value.password);
         response.message = response.success
-          ? 'Logged in'
-          : 'Wrong username/password';
-        response.jwt = response.success ? signSync({
-          userName,
-        }) : '';
+          ? "Logged in"
+          : "Wrong username/password";
+        response.jwt = response.success
+          ? jwt.sign({ userName }, jwtSecret, {
+              expiresIn: jwtExp,
+            })
+          : "";
       }
     });
     return JSON.stringify(response);
@@ -86,11 +83,14 @@ class UserAPI extends DataSource {
     const password = bcrypt.hashSync(netId, salt);
 
     const response = {
-      success: true, message: '', userName, jwt: '',
+      success: true,
+      message: "",
+      userName,
+      jwt: "",
     };
     await this.findUser({ userName }).then((value) => {
       if (value) {
-        response.message = 'Account already exists';
+        response.message = "Account already exists";
       } else {
         this.store.users.create({
           email,
@@ -104,10 +104,10 @@ class UserAPI extends DataSource {
           calibrationPermission: false,
           calibrationApproverPermission: false,
         });
-        response.message = 'Created account for user';
+        response.message = "Created account for user";
         // 1 day = 8.64e7 ms
         const signSync = createSigner({
-          key: 'secret',
+          key: "secret",
           expiresIn: 8.64e7,
         });
         response.jwt = signSync({
@@ -123,7 +123,7 @@ class UserAPI extends DataSource {
    * to a user in the db
    */
   async updatePassword({ userName, oldPassword, newPassword }) {
-    const response = { success: false, message: '' };
+    const response = { success: false, message: "" };
     await this.findUser({ userName }).then((value) => {
       if (value) {
         if (bcrypt.compareSync(oldPassword, value.password)) {
@@ -133,74 +133,88 @@ class UserAPI extends DataSource {
           const password = bcrypt.hashSync(newPassword, salt);
           this.store.users.update({ password }, { where: { userName } });
           response.success = true;
-          response.message = 'Successfully updated password';
+          response.message = "Successfully updated password";
         } else {
-          response.message = 'Incorrect password';
+          response.message = "Incorrect password";
         }
       } else {
-        response.message = 'User does not exist';
+        response.message = "User does not exist";
       }
     });
     return JSON.stringify(response);
   }
 
   async editPermissions({
-    userName, isAdmin, modelPermission,
+    userName,
+    isAdmin,
+    modelPermission,
     calibrationPermission,
     instrumentPermission,
     calibrationApproverPermission,
   }) {
-    const response = { success: false, message: '', user: null };
+    const response = { success: false, message: "", user: null };
     const storeModel = await this.store;
     this.store = storeModel;
     if (!this.checkPermissions()) {
-      response.message = 'ERROR: User does not have permission.';
+      response.message = "ERROR: User does not have permission.";
       return response;
     }
     // eslint-disable-next-line max-len
-    if (isAdmin && (!modelPermission || !instrumentPermission || !calibrationPermission || !calibrationApproverPermission)) {
-      response.message = 'ERROR: admin permission must imply all other permissions';
+    if (
+      isAdmin &&
+      (!modelPermission ||
+        !instrumentPermission ||
+        !calibrationPermission ||
+        !calibrationApproverPermission)
+    ) {
+      response.message =
+        "ERROR: admin permission must imply all other permissions";
       return response;
     }
     if (modelPermission && !instrumentPermission) {
-      response.message = 'ERROR: model permission must imply instrument permission';
+      response.message =
+        "ERROR: model permission must imply instrument permission";
       return response;
     }
     if (calibrationApproverPermission && !calibrationPermission) {
-      response.message = 'ERROR: calibration approver permission must imply calibration permission';
+      response.message =
+        "ERROR: calibration approver permission must imply calibration permission";
       return response;
     }
-    if (userName !== 'admin') {
-      await this.store.users.update({
-        isAdmin,
-        modelPermission,
-        calibrationPermission,
-        calibrationApproverPermission,
-        instrumentPermission,
-      }, { where: { userName } });
+    if (userName !== "admin") {
+      await this.store.users.update(
+        {
+          isAdmin,
+          modelPermission,
+          calibrationPermission,
+          calibrationApproverPermission,
+          instrumentPermission,
+        },
+        { where: { userName } }
+      );
       response.success = true;
       response.message = `Updated user permissions for user ${userName}`;
       response.user = await this.findUser({ userName });
     } else {
-      response.message = 'ERROR: Cannot change local admin permissions';
+      response.message = "ERROR: Cannot change local admin permissions";
     }
     return response;
   }
 
   async deleteUser({ userName }) {
-    const response = { success: false, message: '' };
+    const response = { success: false, message: "" };
     const storeModel = await this.store;
     this.store = storeModel;
     if (!this.checkPermissions()) {
-      response.message = 'ERROR: User does not have permission.';
+      response.message = "ERROR: User does not have permission.";
       return JSON.stringify(response);
     }
-    if (userName !== 'admin') {
+    if (userName !== "admin") {
       this.store.users.destroy({ where: { userName } });
       response.success = true;
       response.message = `Deleted user ${userName}`;
     } else {
-      response.message = 'ERROR: Cannot delete local admin';
+      response.message = "ERROR: Cannot delete local admin";
     }
     return JSON.stringify(response);
   }
@@ -262,12 +276,15 @@ class UserAPI extends DataSource {
     calibrationPermission = false,
     calibrationApproverPermission = false,
   }) {
-    const response = { message: '', success: false };
+    const response = { message: "", success: false };
     const validation = validateUser({
-      firstName, lastName, password, email,
+      firstName,
+      lastName,
+      password,
+      email,
     });
     if (!this.checkPermissions()) {
-      response.message = 'ERROR: User does not have permission.';
+      response.message = "ERROR: User does not have permission.";
       return JSON.stringify(response);
     }
     if (!validation[0]) {
@@ -277,7 +294,7 @@ class UserAPI extends DataSource {
     }
     await this.findUser({ userName }).then((value) => {
       if (value) {
-        response.message = 'Username already exists!';
+        response.message = "Username already exists!";
       } else {
         this.store.users.create({
           email,
@@ -286,12 +303,14 @@ class UserAPI extends DataSource {
           userName,
           password,
           isAdmin,
-          instrumentPermission: isAdmin || modelPermission || instrumentPermission,
+          instrumentPermission:
+            isAdmin || modelPermission || instrumentPermission,
           modelPermission: isAdmin || modelPermission,
           calibrationPermission: isAdmin || calibrationPermission,
-          calibrationApproverPermission: isAdmin || calibrationApproverPermission,
+          calibrationApproverPermission:
+            isAdmin || calibrationApproverPermission,
         });
-        response.message = 'Account Created!';
+        response.message = "Account Created!";
         response.success = true;
       }
     });

@@ -1,0 +1,41 @@
+# build environment
+FROM node:15.7.0
+
+WORKDIR /app
+
+ENV PATH /app/node_modules/.bin:$PATH
+
+RUN mkdir client && mkdir server
+COPY server/ /app/server
+RUN cd server && npm install --silent && cd ..
+RUN npm install -g nodemon
+COPY client/package.json ./client
+COPY client/package-lock.json ./client
+RUN cd client && npm install --silent
+RUN npm install react-scripts@3.4.1 -g --silent
+COPY client/ /app/client
+RUN cd /app/client && npm run build
+
+# RUN apk add --update alpine-sdk \
+#   sudo \
+#   curl \
+#   build-base \
+#   g++ \
+#   libpng \
+#   libpng-dev \
+#   jpeg-dev \
+#   pango-dev \
+#   cairo-dev \
+#   giflib-dev \
+#   ;
+
+# Install python/pip
+# ENV PYTHONUNBUFFERED=1
+# RUN apk add --update --no-cache python2 && ln -sf python2 /usr/bin/python
+# RUN python2.7 -m ensurepip
+# RUN pip2 install --no-cache --upgrade pip setuptools
+# RUN npm install -g node-gyp --silent
+
+EXPOSE 4000 4001 3000
+
+CMD ["nodemon","-L","/app/server/index.js" ]
